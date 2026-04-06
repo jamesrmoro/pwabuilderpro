@@ -316,7 +316,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
         fs.writeFileSync(path.join(buildDir, 'gradle.properties'), "org.gradle.jvmargs=-Xmx512m\norg.gradle.daemon=false");
 
         io.emit('log', `> [2/3] Atualizando Manifesto e Assets...`);
-        await runCommand('npx', ['@bubblewrap/cli', 'update', '--skipCheck', '--no-prompt']);
+        await runCommand('npx', ['@bubblewrap/cli', 'update', '--skipCheck', '--skipVersionUpgrade', '--no-prompt']);
 
         io.emit('log', `> [3/3] Compilando APK/AAB (Econômico)...`);
         const buildCode = await runCommand('npx', [
