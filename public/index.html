@@ -76,6 +76,9 @@
         .modal-content::before { content: ''; position: absolute; inset: -40% -25% auto; height: 280px; background: radial-gradient(circle, rgba(74, 222, 128, 0.22), transparent 62%); pointer-events: none; }
         .modal-content::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(135deg, rgba(255,255,255,0.08), transparent 28%, rgba(45,212,191,0.06)); pointer-events: none; }
         .modal-content > * { position: relative; z-index: 1; }
+        .modal-close { position: absolute; top: 18px; right: 18px; z-index: 2; width: 42px; height: 42px; min-height: 42px; margin: 0; padding: 0; border-radius: 50%; background: rgba(15, 23, 42, 0.68); color: #f8fafc; border: 1px solid rgba(148, 163, 184, 0.24); box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255,255,255,0.08); transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease; }
+        .modal-close:hover { background: rgba(127, 29, 29, 0.86); border-color: rgba(248, 113, 113, 0.45); transform: translateY(-1px); }
+        .modal-close svg { width: 18px; height: 18px; stroke: currentColor; }
         .modal-header { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 22px; }
         .modal-copy { max-width: 520px; }
         .modal-content h3 { color: var(--off-white); margin: 0; font-size: clamp(1.75rem, 3vw, 2.35rem); line-height: 1.12; letter-spacing: -0.035em; }
@@ -86,16 +89,15 @@
         .modal-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 10px; }
         .btn-primary { position: relative; justify-content: space-between; text-align: left; background: linear-gradient(145deg, rgba(51, 65, 85, 0.78), rgba(15, 23, 42, 0.78)); color: var(--off-white); border: 1px solid rgba(148, 163, 184, 0.2); padding: 18px; border-radius: 20px; cursor: pointer; font-size: 16px; font-weight: bold; min-height: 112px; transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease; box-shadow: 0 16px 34px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.06); }
         .btn-primary:hover { background: linear-gradient(145deg, rgba(22, 101, 52, 0.74), rgba(13, 148, 136, 0.50)); border-color: rgba(74, 222, 128, 0.46); box-shadow: 0 20px 44px rgba(16,185,129,0.18), inset 0 1px 0 rgba(255,255,255,0.1); transform: translateY(-2px); }
-        .btn-primary:focus-visible, .btn-secondary:focus-visible { outline: 3px solid rgba(45, 212, 191, 0.35); outline-offset: 3px; }
+        .btn-primary:focus-visible, .modal-close:focus-visible { outline: 3px solid rgba(45, 212, 191, 0.35); outline-offset: 3px; }
         .btn-primary.download-key-card { grid-column: 1 / -1; min-height: 98px; background: linear-gradient(145deg, rgba(20, 83, 45, 0.72), rgba(15, 118, 110, 0.44)); }
-        .download-card-icon { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; border-radius: 16px; background: rgba(45, 212, 191, 0.16); border: 1px solid rgba(45, 212, 191, 0.26); color: var(--green-main); font-size: 1.35rem; box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
+        .download-card-icon { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; border-radius: 16px; background: rgba(45, 212, 191, 0.16); border: 1px solid rgba(45, 212, 191, 0.26); color: var(--green-main); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
+        .download-card-icon svg { width: 25px; height: 25px; stroke: currentColor; }
         .download-card-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }
         .download-title { color: #f8fafc; font-size: 1.08rem; line-height: 1.15; }
         .download-subtitle { color: #a7f3d0; font-size: 0.82rem; font-weight: 600; line-height: 1.35; }
         .download-card-arrow { color: rgba(226, 232, 240, 0.62); font-size: 1.35rem; transition: transform 0.2s ease, color 0.2s ease; }
         .btn-primary:hover .download-card-arrow { color: #f8fafc; transform: translateX(3px); }
-        .btn-secondary { grid-column: 1 / -1; background: linear-gradient(145deg, rgba(220, 38, 38, 0.9), rgba(127, 29, 29, 0.92)); color: white; border: 1px solid rgba(248, 113, 113, 0.34); padding: 14px 18px; border-radius: 16px; cursor: pointer; font-size: 16px; font-weight: bold; min-height: 52px; transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease; box-shadow: 0 14px 28px rgba(127, 29, 29, 0.22); }
-        .btn-secondary:hover { background: linear-gradient(145deg, rgba(239, 68, 68, 0.95), rgba(153, 27, 27, 0.95)); transform: translateY(-1px); box-shadow: 0 16px 34px rgba(127, 29, 29, 0.30); }
         @media (max-width: 620px) {
             .modal-content { padding: 30px 22px; border-radius: 24px; }
             .modal-buttons { grid-template-columns: 1fr; }
@@ -139,6 +141,11 @@
 <!-- Result Modal -->
 <div id="successModal" class="modal-overlay">
     <div class="modal-content">
+        <button class="modal-close" id="btnCloseModal" type="button" aria-label="Fechar" title="Fechar">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+        </button>
         <div class="modal-header">
             <div class="success-checkmark">
                 <div id="modalCheckIcon" class="check-icon">
@@ -156,7 +163,12 @@
         <p id="signedBadge" class="signed-badge">Verificado: Aplicativo Assinado Digitalmente</p>
         <div class="modal-buttons">
             <button class="btn-primary" id="btnDownloadAab">
-                <span class="download-card-icon">📦</span>
+                <span class="download-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z" stroke-width="1.8" stroke-linejoin="round"/>
+                        <path d="M5.5 7.5L12 11l6.5-3.5M12 11v9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </span>
                 <span class="download-card-copy">
                     <span class="download-title">Baixar AAB</span>
                     <span class="download-subtitle">Bundle otimizado para publicação na Play Store</span>
@@ -164,7 +176,12 @@
                 <span class="download-card-arrow">→</span>
             </button>
             <button class="btn-primary" id="btnDownloadApk">
-                <span class="download-card-icon">🤖</span>
+                <span class="download-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M8 8h8v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V8z" stroke-width="1.8" stroke-linejoin="round"/>
+                        <path d="M9 8L7 5M15 8l2-3M9 12h.01M15 12h.01M6 10v5M18 10v5" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </span>
                 <span class="download-card-copy">
                     <span class="download-title">Baixar APK</span>
                     <span class="download-subtitle">Arquivo pronto para testes e instalação direta</span>
@@ -172,14 +189,18 @@
                 <span class="download-card-arrow">→</span>
             </button>
             <button class="btn-primary download-key-card" id="btnDownloadKey" style="display: none;">
-                <span class="download-card-icon">🔐</span>
+                <span class="download-card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M14 10a4 4 0 1 0-3.2 3.92L13 16h3v3h3v-3.5L14 10z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7.5 10.5h.01" stroke-width="2.4" stroke-linecap="round"/>
+                    </svg>
+                </span>
                 <span class="download-card-copy">
                     <span class="download-title">Baixar Chave</span>
                     <span class="download-subtitle">Guarde a keystore com segurança para futuras atualizações</span>
                 </span>
                 <span class="download-card-arrow">→</span>
             </button>
-            <button class="btn-secondary" id="btnCloseModal">Fechar</button>
         </div>
     </div>
 </div>
@@ -385,9 +406,36 @@
     const btnCloseModal = document.getElementById('btnCloseModal');
     const buildTimeText = document.getElementById('buildTimeText');
 
-    function setDownloadCard(button, icon, title, subtitle) {
+    const downloadIcons = {
+        aab: `
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M5.5 7.5L12 11l6.5-3.5M12 11v9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `,
+        apk: `
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 8h8v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V8z" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M9 8L7 5M15 8l2-3M9 12h.01M15 12h.01M6 10v5M18 10v5" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+        `,
+        key: `
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M14 10a4 4 0 1 0-3.2 3.92L13 16h3v3h3v-3.5L14 10z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7.5 10.5h.01" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+        `,
+        logs: `
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l9 16H3L12 3z" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M12 9v4M12 17h.01" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+        `
+    };
+
+    function setDownloadCard(button, iconName, title, subtitle) {
         button.innerHTML = `
-            <span class="download-card-icon">${icon}</span>
+            <span class="download-card-icon">${downloadIcons[iconName]}</span>
             <span class="download-card-copy">
                 <span class="download-title">${title}</span>
                 <span class="download-subtitle">${subtitle}</span>
@@ -717,7 +765,8 @@
                 circleIcon.className = "icon-circle";
                 iconLine1.className = "icon-line line-tip";
                 iconLine2.className = "icon-line line-long";
-                setDownloadCard(btnDownloadAab, "📦", "Baixar AAB", "Bundle otimizado para publicação na Play Store");
+                btnDownloadAab.style.display = '';
+                setDownloadCard(btnDownloadAab, "aab", "Baixar AAB", "Bundle otimizado para publicação na Play Store");
                 btnDownloadAab.style.background = "";
                 btnDownloadAab.style.color = "";
                 btnDownloadAab.onclick = () => {
@@ -725,13 +774,13 @@
                     successModal.classList.remove('show');
                 };
                 btnDownloadApk.style.display = '';
-                setDownloadCard(btnDownloadApk, "🤖", "Baixar APK", "Arquivo pronto para testes e instalação direta");
+                setDownloadCard(btnDownloadApk, "apk", "Baixar APK", "Arquivo pronto para testes e instalação direta");
                 btnDownloadApk.onclick = () => {
                     window.location.href = '/download?type=apk';
                     successModal.classList.remove('show');
                 };
                 btnDownloadKey.style.display = data.generatedKey ? '' : 'none';
-                setDownloadCard(btnDownloadKey, "🔐", "Baixar Chave", "Guarde a keystore com segurança para futuras atualizações");
+                setDownloadCard(btnDownloadKey, "key", "Baixar Chave", "Guarde a keystore com segurança para futuras atualizações");
                 btnDownloadKey.onclick = () => {
                     window.location.href = '/download-key';
                 };
@@ -750,7 +799,8 @@
                 circleIcon.className = "icon-circle error-circle";
                 iconLine1.className = "icon-line error-line left";
                 iconLine2.className = "icon-line error-line right";
-                setDownloadCard(btnDownloadAab, "⚠️", "Baixar Logs de Erro", "Relatório com detalhes técnicos da falha");
+                btnDownloadAab.style.display = '';
+                setDownloadCard(btnDownloadAab, "logs", "Baixar Logs de Erro", "Relatório com detalhes técnicos da falha");
                 btnDownloadAab.style.background = "linear-gradient(145deg, rgba(220, 38, 38, 0.9), rgba(127, 29, 29, 0.92))";
                 btnDownloadAab.onclick = () => {
                     window.location.href = '/download';
@@ -812,8 +862,7 @@
             iconLine1.className = "icon-line error-line left";
             iconLine2.className = "icon-line error-line right";
 
-            setDownloadCard(btnDownloadAab, "⏱️", "Fechar", "O build excedeu o tempo limite configurado");
-            btnDownloadAab.style.background = "linear-gradient(145deg, rgba(220, 38, 38, 0.9), rgba(127, 29, 29, 0.92))";
+            btnDownloadAab.style.display = 'none';
             btnDownloadAab.onclick = () => successModal.classList.remove('show');
             btnDownloadApk.style.display = 'none';
             btnDownloadKey.style.display = 'none';
