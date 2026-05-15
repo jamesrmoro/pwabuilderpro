@@ -14,6 +14,7 @@ const server = http.createServer(app);
 let currentBuildProcesses = [];
 const io = new Server(server);
 const upload = multer({ dest: './uploads/', limits: { fileSize: 10 * 1024 * 1024 } });
+const defaultGeneratedKeystoreName = 'generated-signing-key.jks';
 
 app.use(express.static('public'));
 app.use(express.json());
@@ -21,6 +22,65 @@ app.use(express.json());
 // Limpa cores e caracteres especiais do log para o Socket.io
 function cleanLogs(text) {
     return text.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-z]/g, '');
+}
+
+function sanitizeKeyAlias(alias) {
+    return (alias || 'android').trim().replace(/[^a-zA-Z0-9_.-]/g, '-') || 'android';
+}
+
+function runProcess(cmd, args, options = {}) {
+    return new Promise((resolve) => {
+        const child = spawn(cmd, args, { ...options, shell: false });
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (data) => {
+            stdout += cleanLogs(data);
+        });
+
+        child.stderr.on('data', (data) => {
+            stderr += cleanLogs(data);
+        });
+
+        child.on('error', (error) => {
+            resolve({ code: 1, stdout, stderr: error.message });
+        });
+
+        child.on('close', (code) => {
+            resolve({ code, stdout, stderr });
+        });
+    });
+}
+
+async function createSigningKey(buildDir, keyAlias, storePassword) {
+    const keystorePath = path.join(buildDir, defaultGeneratedKeystoreName);
+    const alias = sanitizeKeyAlias(keyAlias);
+    const password = (storePassword || '').trim();
+
+    if (!password || password.length < 6) {
+        throw new Error('Para criar uma nova chave, informe uma senha da keystore com pelo menos 6 caracteres. Guarde essa senha para futuras atualizações do app.');
+    }
+
+    const keytoolArgs = [
+        '-genkeypair',
+        '-v',
+        '-keystore', keystorePath,
+        '-storetype', 'JKS',
+        '-alias', alias,
+        '-keyalg', 'RSA',
+        '-keysize', '2048',
+        '-validity', '10000',
+        '-storepass', password,
+        '-keypass', password,
+        '-dname', `CN=${alias}, OU=PWA Builder Pro, O=PWA Builder Pro, L=Internet, S=Internet, C=BR`
+    ];
+
+    const result = await runProcess('keytool', keytoolArgs, { cwd: buildDir });
+    if (result.code !== 0 || !fs.existsSync(keystorePath)) {
+        throw new Error(`Não foi possível criar a chave automaticamente com keytool. ${result.stderr || result.stdout}`.trim());
+    }
+
+    return { keystorePath, alias };
 }
 
 app.post('/cancel-build', (req, res) => {
@@ -184,14 +244,28 @@ app.get('/download', (req, res) => {
     }
 });
 
+app.get('/download-key', (req, res) => {
+    const keystorePath = path.join(__dirname, 'temp_build', defaultGeneratedKeystoreName);
+
+    if (fs.existsSync(keystorePath)) {
+        console.log(`> Enviando keystore gerada: ${keystorePath}`);
+        return res.download(keystorePath, defaultGeneratedKeystoreName);
+    }
+
+    res.status(404).send('Nenhuma keystore gerada automaticamente foi encontrada para download.');
+});
+
 app.post('/generate', upload.single('signingKey'), async (req, res) => {
     const {
-        appName, host, keyAlias, storePassword, versionCode, versionName,
+        appName, host, keyAlias, storePassword, signingMode, versionCode, versionName,
         shortName, packageId, themeColor, themeDarkColor, backgroundColor, navColor, navDarkColor, iconUrl, startUrl,
         description, iarc, displayMode, orientation, screenshots
     } = req.body;
 
-    if (!req.file || !host || !appName) {
+    const shouldUseExistingKey = signingMode === 'existing' || !!req.file;
+    const missingRequiredFields = !host || !appName || !storePassword || (shouldUseExistingKey && (!req.file || !keyAlias));
+
+    if (missingRequiredFields) {
         if (req.file && req.file.path) {
             try {
                 fs.unlinkSync(req.file.path);
@@ -199,7 +273,10 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 console.error('Error deleting file:', e.message);
             }
         }
-        return res.status(400).json({ success: false, msg: 'Faltam campos obrigatórios (signingKey, host, appName)' });
+        const msg = shouldUseExistingKey
+            ? 'Faltam campos obrigatórios (host, appName, signingKey, keyAlias, storePassword)'
+            : 'Faltam campos obrigatórios (host, appName, storePassword)';
+        return res.status(400).json({ success: false, msg });
     }
 
     const vCode = parseInt(versionCode) || 1;
@@ -222,7 +299,20 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
         if (!fs.existsSync(userGradleDir)) fs.mkdirSync(userGradleDir, { recursive: true });
         fs.writeFileSync(path.join(userGradleDir, 'gradle.properties'), "org.gradle.jvmargs=-Xmx512m\norg.gradle.daemon=false");
 
-        const keystorePath = path.resolve(req.file.path).replace(/\\/g, '/');
+        let keystorePath;
+        let finalKeyAlias = keyAlias;
+
+        if (shouldUseExistingKey) {
+            keystorePath = path.resolve(req.file.path).replace(/\\/g, '/');
+        } else {
+            io.emit('log', '> Nenhuma chave enviada. Criando nova keystore para primeira publicação...');
+            const generatedKey = await createSigningKey(buildDir, keyAlias, storePassword);
+            keystorePath = generatedKey.keystorePath.replace(/\\/g, '/');
+            finalKeyAlias = generatedKey.alias;
+            io.emit('log', `> ✅ Nova keystore criada automaticamente (${defaultGeneratedKeystoreName}) com alias "${finalKeyAlias}".`);
+            io.emit('log', '> ⚠️ Guarde a senha e use a mesma keystore para atualizar este app no futuro.');
+        }
+
         let cleanHost = host.trim().replace(/^https?:\/\//, '').replace(/\/$/, '').split('/')[0];
 
         let finalPackageId = packageId;
@@ -247,7 +337,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             enableNotifications: true,
             startUrl: startUrl || "/",
             iconUrl: finalIconUrl,
-            signingKey: { path: keystorePath, alias: keyAlias },
+            signingKey: { path: keystorePath, alias: finalKeyAlias },
             appVersionCode: vCode,
             appVersionName: vName,
             generatorApp: "bubblewrap-cli",
@@ -370,7 +460,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 }
             }
             if (isSigned) {
-               io.emit('status', { success: true, msg: "✅ SUCESSO! O download já está disponível.", isSigned: true });
+               io.emit('status', { success: true, msg: "✅ SUCESSO! O download já está disponível.", isSigned: true, generatedKey: !shouldUseExistingKey });
             } else {
                io.emit('status', { success: false, msg: "❌ O Build falhou na assinatura do pacote. O download do arquivo de logs (build-error.log) está disponível.", isSigned: false, hasLogs: true });
             }
@@ -380,6 +470,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
     } catch (err) {
         io.emit('log', `❌ ERRO CRÍTICO: ${err.message}`);
+        io.emit('status', { success: false, msg: `❌ Erro crítico: ${err.message}`, isSigned: false, hasLogs: true });
     } finally {
         if (req.file && req.file.path) {
             try {

@@ -132,6 +132,7 @@
         <div class="modal-buttons">
             <button class="btn-primary" id="btnDownloadAab">Baixar AAB</button>
             <button class="btn-primary" id="btnDownloadApk" style="background: #2ecc71; color: #121212;">Baixar APK</button>
+            <button class="btn-primary" id="btnDownloadKey" style="display: none; background: var(--mint); color: #121212;">Baixar Chave</button>
             <button class="btn-secondary" id="btnCloseModal">Fechar</button>
         </div>
     </div>
@@ -277,16 +278,30 @@
                 </div>
             </div>
             <div class="form-group">
+                <label>Tipo de assinatura:</label>
+                <div style="display: flex; flex-direction: column; gap: 8px; background: var(--blue-mid); padding: 12px; border-radius: 8px;">
+                    <label style="display: flex; gap: 8px; align-items: flex-start; font-weight: 500;">
+                        <input type="radio" name="signingMode" value="new" checked style="width: auto; min-height: auto; margin-top: 3px;">
+                        <span>Criar nova chave automaticamente (primeira publicação)</span>
+                    </label>
+                    <label style="display: flex; gap: 8px; align-items: flex-start; font-weight: 500;">
+                        <input type="radio" name="signingMode" value="existing" style="width: auto; min-height: auto; margin-top: 3px;">
+                        <span>Usar keystore existente (atualização de app já publicado)</span>
+                    </label>
+                </div>
+                <small id="signingModeHelp" style="display: block; margin-top: 8px; color: #cbd5e1; line-height: 1.4;">Na primeira geração você não precisa enviar uma chave: informe alias e senha, e o sistema cria a keystore para você baixar e guardar.</small>
+            </div>
+            <div class="form-group" id="signingKeyGroup" style="display: none;">
                 <label>Arquivo Keystore:</label>
-                <input type="file" name="signingKey" required>
+                <input type="file" name="signingKey">
             </div>
             <div class="form-group">
                 <label>Key Alias:</label>
-                <input type="text" name="keyAlias" placeholder="ex: meualias" required>
+                <input type="text" name="keyAlias" placeholder="ex: meualias" value="android" required>
             </div>
             <div class="form-group">
                 <label>Senha da Keystore:</label>
-                <input type="password" name="storePassword" placeholder="Sua senha da keystore" required>
+                <input type="password" name="storePassword" placeholder="Mínimo 6 caracteres. Guarde para atualizações futuras." required minlength="6">
             </div>
         </fieldset>
 
@@ -320,6 +335,7 @@
     const successModal = document.getElementById('successModal');
     const btnDownloadAab = document.getElementById('btnDownloadAab');
     const btnDownloadApk = document.getElementById('btnDownloadApk');
+    const btnDownloadKey = document.getElementById('btnDownloadKey');
     const btnCloseModal = document.getElementById('btnCloseModal');
     const buildTimeText = document.getElementById('buildTimeText');
 
@@ -372,7 +388,9 @@
                 for (const key in savedData) {
                     const input = buildForm.elements[key];
                     if (input) {
-                        if (input.type !== 'file' && input.type !== 'password' && input.name !== 'screenshots') {
+                        if (input instanceof RadioNodeList) {
+                            input.value = savedData[key];
+                        } else if (input.type !== 'file' && input.type !== 'password' && input.name !== 'screenshots') {
                             input.value = savedData[key];
                         }
                     }
@@ -389,19 +407,40 @@
         const dataToSave = {};
         for (let [key, value] of formData.entries()) {
             const input = buildForm.elements[key];
-            if (input && input.type !== 'file' && input.type !== 'password' && key !== 'screenshots') {
+            if (input instanceof RadioNodeList || (input && input.type !== 'file' && input.type !== 'password' && key !== 'screenshots')) {
                 dataToSave[key] = value;
             }
         }
         localStorage.setItem('pwaBuilderFormData', JSON.stringify(dataToSave));
     }
 
+    function updateSigningModeUI() {
+        const signingMode = document.querySelector('input[name="signingMode"]:checked')?.value || 'new';
+        const signingKeyInput = document.querySelector('input[name="signingKey"]');
+        const signingKeyGroup = document.getElementById('signingKeyGroup');
+        const signingModeHelp = document.getElementById('signingModeHelp');
+
+        if (signingMode === 'existing') {
+            signingKeyGroup.style.display = 'block';
+            signingKeyInput.required = true;
+            signingModeHelp.innerText = 'Use esta opção quando você já publicou o app e precisa assinar uma atualização com a mesma keystore.';
+        } else {
+            signingKeyGroup.style.display = 'none';
+            signingKeyInput.required = false;
+            signingModeHelp.innerText = 'Na primeira geração você não precisa enviar uma chave: informe alias e senha, e o sistema cria a keystore para você baixar e guardar.';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         loadSavedFormData();
+        updateSigningModeUI();
         const buildForm = document.getElementById('buildForm');
         if (buildForm) {
             buildForm.addEventListener('input', saveFormData);
             buildForm.addEventListener('change', saveFormData);
+            buildForm.querySelectorAll('input[name="signingMode"]').forEach(input => {
+                input.addEventListener('change', updateSigningModeUI);
+            });
         }
     });
 
@@ -471,6 +510,9 @@
     btnDownloadApk.onclick = () => {
         window.location.href = '/download?type=apk';
         successModal.classList.remove('show');
+    };
+    btnDownloadKey.onclick = () => {
+        window.location.href = '/download-key';
     };
     btnCloseModal.onclick = () => {
         successModal.classList.remove('show');
@@ -631,6 +673,10 @@
                     window.location.href = '/download?type=apk';
                     successModal.classList.remove('show');
                 };
+                btnDownloadKey.style.display = data.generatedKey ? 'block' : 'none';
+                btnDownloadKey.onclick = () => {
+                    window.location.href = '/download-key';
+                };
                 buildTimeText.style.display = 'block';
                 if (data.isSigned) {
                     signedBadge.style.display = 'block';
@@ -653,6 +699,7 @@
                     successModal.classList.remove('show');
                 };
                 btnDownloadApk.style.display = 'none';
+                btnDownloadKey.style.display = 'none';
                 buildTimeText.style.display = 'none';
                 signedBadge.style.display = 'none';
             }
@@ -711,6 +758,7 @@
             btnDownloadAab.style.background = "#e74c3c";
             btnDownloadAab.onclick = () => successModal.classList.remove('show');
             btnDownloadApk.style.display = 'none';
+            btnDownloadKey.style.display = 'none';
             document.getElementById('buildTimeText').style.display = 'none';
             document.getElementById('signedBadge').style.display = 'none';
 
@@ -733,6 +781,8 @@
         }, 4000);
 
         fullLoader.classList.add('show');
+
+        updateSigningModeUI();
 
         const formData = new FormData(e.target);
         await fetch('/generate', { method: 'POST', body: formData });
