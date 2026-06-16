@@ -52,13 +52,18 @@ function runProcess(cmd, args, options = {}) {
     });
 }
 
-async function createSigningKey(buildDir, keyAlias, storePassword) {
+async function createSigningKey(buildDir, keyAlias, storePassword, keyPassword) {
     const keystorePath = path.join(buildDir, defaultGeneratedKeystoreName);
     const alias = sanitizeKeyAlias(keyAlias);
     const password = (storePassword || '').trim();
+    const aliasPassword = (keyPassword || storePassword || '').trim();
 
     if (!password || password.length < 6) {
         throw new Error('Para criar uma nova chave, informe uma senha da keystore com pelo menos 6 caracteres. Guarde essa senha para futuras atualizações do app.');
+    }
+
+    if (!aliasPassword || aliasPassword.length < 6) {
+        throw new Error('Para criar uma nova chave, informe uma senha da chave com pelo menos 6 caracteres.');
     }
 
     const keytoolArgs = [
@@ -71,7 +76,7 @@ async function createSigningKey(buildDir, keyAlias, storePassword) {
         '-keysize', '2048',
         '-validity', '10000',
         '-storepass', password,
-        '-keypass', password,
+        '-keypass', aliasPassword,
         '-dname', `CN=${alias}, OU=PWA Builder Pro, O=PWA Builder Pro, L=Internet, S=Internet, C=BR`
     ];
 
@@ -257,13 +262,17 @@ app.get('/download-key', (req, res) => {
 
 app.post('/generate', upload.single('signingKey'), async (req, res) => {
     const {
-        appName, host, keyAlias, storePassword, signingMode, versionCode, versionName,
+        appName, host, keyAlias, storePassword, keyPassword, signingMode, googlePlayBilling, versionCode, versionName,
         shortName, packageId, themeColor, themeDarkColor, backgroundColor, navColor, navDarkColor, iconUrl, startUrl,
         description, iarc, displayMode, orientation, screenshots
     } = req.body;
 
     const shouldUseExistingKey = signingMode === 'existing' || !!req.file;
-    const missingRequiredFields = !host || !appName || !storePassword || (shouldUseExistingKey && (!req.file || !keyAlias));
+    const finalKeyPassword = (keyPassword || storePassword || '').trim();
+    const shouldEnableGooglePlayBilling = Array.isArray(googlePlayBilling)
+        ? googlePlayBilling.includes('on')
+        : googlePlayBilling !== 'off';
+    const missingRequiredFields = !host || !appName || !storePassword || storePassword.trim().length < 6 || finalKeyPassword.length < 6 || (shouldUseExistingKey && (!req.file || !keyAlias));
 
     if (missingRequiredFields) {
         if (req.file && req.file.path) {
@@ -275,7 +284,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
         }
         const msg = shouldUseExistingKey
             ? 'Faltam campos obrigatórios (host, appName, signingKey, keyAlias, storePassword)'
-            : 'Faltam campos obrigatórios (host, appName, storePassword)';
+            : 'Faltam campos obrigatórios (host, appName, storePassword, keyPassword)';
         return res.status(400).json({ success: false, msg });
     }
 
@@ -306,7 +315,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             keystorePath = path.resolve(req.file.path).replace(/\\/g, '/');
         } else {
             io.emit('log', '> Nenhuma chave enviada. Criando nova keystore para primeira publicação...');
-            const generatedKey = await createSigningKey(buildDir, keyAlias, storePassword);
+            const generatedKey = await createSigningKey(buildDir, keyAlias, storePassword, finalKeyPassword);
             keystorePath = generatedKey.keystorePath.replace(/\\/g, '/');
             finalKeyAlias = generatedKey.alias;
             io.emit('log', `> ✅ Nova keystore criada automaticamente (${defaultGeneratedKeystoreName}) com alias "${finalKeyAlias}".`);
@@ -338,6 +347,9 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             startUrl: startUrl || "/",
             iconUrl: finalIconUrl,
             signingKey: { path: keystorePath, alias: finalKeyAlias },
+            features: {
+                playBilling: { enabled: shouldEnableGooglePlayBilling }
+            },
             appVersionCode: vCode,
             appVersionName: vName,
             generatorApp: "bubblewrap-cli",
@@ -377,7 +389,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 const env = { 
                     ...process.env, 
                     BUBBLEWRAP_KEYSTORE_PASSWORD: storePassword,
-                    BUBBLEWRAP_KEY_PASSWORD: storePassword,
+                    BUBBLEWRAP_KEY_PASSWORD: finalKeyPassword,
                     _JAVA_OPTIONS: "-Xmx512M",
                     GRADLE_OPTS: "-Xmx512m -Dorg.gradle.daemon=false"
                 };
@@ -403,6 +415,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                     // ROBÔ: Respondendo Senha (Fallback se o env: falhar)
                     if (clean.includes('Password') && !clean.includes('*')) {
                         ls.stdin.write(`${storePassword}\n`);
+                        ls.stdin.write(`${finalKeyPassword}\n`);
                     }
 
                     io.emit('log', clean);
@@ -438,7 +451,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             '--skipCheck',
             '--no-prompt',
             '--signingKeyPassword', storePassword,
-            '--signingKeyAliasPassword', storePassword
+            '--signingKeyAliasPassword', finalKeyPassword
         ]);
 
         if (buildCode === 0) {

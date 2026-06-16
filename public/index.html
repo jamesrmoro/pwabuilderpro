@@ -363,12 +363,31 @@
                 <input type="file" name="signingKey">
             </div>
             <div class="form-group">
+                <label style="display: flex; gap: 8px; align-items: center; font-weight: 600;">
+                    <input type="hidden" name="googlePlayBilling" value="off">
+                    <input type="checkbox" name="googlePlayBilling" value="on" checked style="width: auto; min-height: auto;">
+                    <span>Google Play Billing pré-selecionado</span>
+                </label>
+                <small style="display: block; margin-top: 6px; color: #cbd5e1; line-height: 1.4;">Mantém o suporte a faturamento do Google Play ativado ao gerar ou regenerar o projeto Bubblewrap para envio à Play Store.</small>
+            </div>
+            <div class="form-group">
                 <label>Key Alias:</label>
                 <input type="text" name="keyAlias" placeholder="ex: meualias" value="android" required>
             </div>
             <div class="form-group">
                 <label>Senha da Keystore:</label>
                 <input type="password" name="storePassword" placeholder="Mínimo 6 caracteres. Guarde para atualizações futuras." required minlength="6">
+            </div>
+            <div class="form-group">
+                <label>Senha da Chave (Key Password):</label>
+                <input type="password" name="keyPassword" placeholder="Use a mesma senha da keystore se não houver uma senha separada." required minlength="6">
+            </div>
+            <div class="form-group">
+                <label style="display: flex; gap: 8px; align-items: center; font-weight: 600;">
+                    <input type="checkbox" name="rememberSigningCredentials" value="on" style="width: auto; min-height: auto;">
+                    <span>Guardar alias e senhas neste navegador</span>
+                </label>
+                <small style="display: block; margin-top: 6px; color: #cbd5e1; line-height: 1.4;">O arquivo keystore ainda precisa ser selecionado manualmente por segurança do navegador, mas alias e senhas serão reaproveitados em atualizações.</small>
             </div>
         </fieldset>
 
@@ -495,7 +514,9 @@
                     if (input) {
                         if (input instanceof RadioNodeList) {
                             input.value = savedData[key];
-                        } else if (input.type !== 'file' && input.type !== 'password' && input.name !== 'screenshots') {
+                        } else if (input.type === 'checkbox') {
+                            input.checked = savedData[key] === 'on';
+                        } else if (input.type !== 'file' && input.name !== 'screenshots') {
                             input.value = savedData[key];
                         }
                     }
@@ -512,9 +533,13 @@
         const dataToSave = {};
         for (let [key, value] of formData.entries()) {
             const input = buildForm.elements[key];
-            if (input instanceof RadioNodeList || (input && input.type !== 'file' && input.type !== 'password' && key !== 'screenshots')) {
+            if (input instanceof RadioNodeList || (input && input.type !== 'file' && key !== 'screenshots')) {
+                if (input.type === 'password' && !buildForm.elements.rememberSigningCredentials?.checked) continue;
                 dataToSave[key] = value;
             }
+        }
+        if (buildForm.elements.rememberSigningCredentials?.checked) {
+            dataToSave.rememberSigningCredentials = 'on';
         }
         localStorage.setItem('pwaBuilderFormData', JSON.stringify(dataToSave));
     }
