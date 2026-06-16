@@ -916,7 +916,22 @@
         updateSigningModeUI();
 
         const formData = new FormData(e.target);
-        await fetch('/generate', { method: 'POST', body: formData });
+        const response = await fetch('/generate', { method: 'POST', body: formData });
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ msg: 'Falha ao iniciar o build.' }));
+            clearInterval(loaderTimerInterval);
+            clearInterval(loaderMessageInterval);
+            clearTimeout(buildTimeout);
+            fullLoader.classList.remove('show');
+            btnGerar.disabled = false;
+            btnCancel.style.display = 'none';
+            buildSpinner.style.display = 'none';
+            btnGerar.querySelector('span').innerText = 'GERAR APLICATIVO';
+            statusInd.innerText = `❌ ${errorData.msg || 'Falha ao iniciar o build.'}`;
+            statusInd.style.background = '#e74c3c';
+            statusInd.style.color = 'white';
+            showToast(errorData.msg || 'Falha ao iniciar o build.', 'error');
+        }
     };
 
     btnCancel.onclick = async () => {

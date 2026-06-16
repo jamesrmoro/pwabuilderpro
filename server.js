@@ -31,6 +31,37 @@ function sanitizeKeyAlias(alias) {
 }
 
 
+
+function findGeneratedArtifacts(buildDir, type) {
+    const results = [];
+    const wantedExtensions = type === 'apk'
+        ? ['.apk']
+        : type === 'aab'
+            ? ['.aab']
+            : ['.aab', '.apk'];
+
+    const walk = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (entry.name === 'node_modules' || entry.name === '.gradle') continue;
+                walk(fullPath);
+                continue;
+            }
+
+            const lowerName = entry.name.toLowerCase();
+            const isUnsignedIntermediate = lowerName.includes('unsigned') || lowerName.includes('unaligned');
+            if (entry.isFile() && !isUnsignedIntermediate && wantedExtensions.some(ext => lowerName.endsWith(ext))) {
+                results.push(fullPath);
+            }
+        }
+    };
+
+    walk(buildDir);
+    return results.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+}
+
 function getNpxCommand() {
     return process.platform === 'win32' ? 'npx.cmd' : 'npx';
 }
@@ -252,36 +283,11 @@ app.get('/download', (req, res) => {
     const buildDir = path.join(__dirname, 'temp_build');
     const type = req.query.type; // 'aab' ou 'apk'
     
-    // Lista de caminhos onde o arquivo pode estar escondido
-    const caminhosParaChecar = [
-        buildDir, // Onde o Bubblewrap às vezes coloca os arquivos no final
-        path.join(buildDir, 'dist'), // Novo padrão do Bubblewrap (mais comum)
-        path.join(buildDir, 'app', 'build', 'outputs', 'bundle', 'release'),
-        path.join(buildDir, 'app', 'build', 'outputs', 'apk', 'release'),
-        path.join(buildDir, 'app', 'build', 'outputs', 'bundle', 'debug')
-    ];
-
-    let arquivoCaminho = null;
-    let nomeOriginal = type === 'apk' ? "app-final.apk" : "app-final.aab";
-
-    for (const pasta of caminhosParaChecar) {
-        if (fs.existsSync(pasta)) {
-            const arquivos = fs.readdirSync(pasta);
-            let encontrado;
-            if (type === 'apk') {
-                encontrado = arquivos.find(f => f.endsWith('.apk'));
-            } else if (type === 'aab') {
-                encontrado = arquivos.find(f => f.endsWith('.aab'));
-            } else {
-                encontrado = arquivos.find(f => (f.endsWith('.aab') || f.endsWith('.apk')) && f !== 'build.log');
-            }
-            if (encontrado) {
-                arquivoCaminho = path.join(pasta, encontrado);
-                nomeOriginal = encontrado;
-                break;
-            }
-        }
-    }
+    const artifacts = findGeneratedArtifacts(buildDir, type);
+    const arquivoCaminho = artifacts[0] || null;
+    const nomeOriginal = arquivoCaminho
+        ? path.basename(arquivoCaminho)
+        : type === 'apk' ? 'app-final.apk' : 'app-final.aab';
 
     if (arquivoCaminho && fs.existsSync(arquivoCaminho)) {
         console.log(`> Enviando arquivo: ${arquivoCaminho}`);
@@ -576,24 +582,10 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
         ]);
 
         if (buildCode === 0) {
-            let isSigned = false;
-            const caminhosParaChecar = [
-                buildDir, // Onde o Bubblewrap às vezes coloca os arquivos no final
-                path.join(buildDir, 'dist'),
-                path.join(buildDir, 'app', 'build', 'outputs', 'bundle', 'release'),
-                path.join(buildDir, 'app', 'build', 'outputs', 'apk', 'release'),
-                path.join(buildDir, 'app', 'build', 'outputs', 'bundle', 'debug')
-            ];
-            for (const pasta of caminhosParaChecar) {
-                if (fs.existsSync(pasta)) {
-                    const arquivos = fs.readdirSync(pasta);
-                    if (arquivos.some(f => (f.endsWith('.aab') || f.endsWith('.apk')) && f !== 'build.log')) {
-                        isSigned = true;
-                        break;
-                    }
-                }
-            }
+            const generatedArtifacts = findGeneratedArtifacts(buildDir);
+            const isSigned = generatedArtifacts.length > 0;
             if (isSigned) {
+               io.emit('log', `> Artefato gerado encontrado: ${path.relative(buildDir, generatedArtifacts[0])}`);
                io.emit('status', { success: true, msg: "✅ SUCESSO! O download já está disponível.", isSigned: true, generatedKey: !shouldUseExistingKey });
             } else {
                io.emit('status', { success: false, msg: "❌ O Build falhou na assinatura do pacote. O download do arquivo de logs (build-error.log) está disponível.", isSigned: false, hasLogs: true });
