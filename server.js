@@ -52,6 +52,33 @@ function runProcess(cmd, args, options = {}) {
     });
 }
 
+
+function addBillingPermissionToManifest(buildDir) {
+    const manifestPath = path.join(buildDir, 'app', 'src', 'main', 'AndroidManifest.xml');
+    const billingPermission = 'com.android.vending.BILLING';
+
+    if (!fs.existsSync(manifestPath)) {
+        throw new Error(`AndroidManifest.xml não encontrado para adicionar a permissão ${billingPermission}.`);
+    }
+
+    const manifest = fs.readFileSync(manifestPath, 'utf8');
+    if (manifest.includes(`android.permission.${billingPermission}`) || manifest.includes(`android:name="${billingPermission}"`)) {
+        return { manifestPath, changed: false };
+    }
+
+    const permissionTag = `    <uses-permission android:name="${billingPermission}" />\n`;
+    let updatedManifest;
+
+    if (manifest.includes('<application')) {
+        updatedManifest = manifest.replace(/\s*<application/, `\n${permissionTag}\n    <application`);
+    } else {
+        updatedManifest = manifest.replace('</manifest>', `${permissionTag}</manifest>`);
+    }
+
+    fs.writeFileSync(manifestPath, updatedManifest);
+    return { manifestPath, changed: true };
+}
+
 async function createSigningKey(buildDir, keyAlias, storePassword) {
     const keystorePath = path.join(buildDir, defaultGeneratedKeystoreName);
     const alias = sanitizeKeyAlias(keyAlias);
@@ -259,7 +286,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
     const {
         appName, host, keyAlias, storePassword, signingMode, versionCode, versionName,
         shortName, packageId, themeColor, themeDarkColor, backgroundColor, navColor, navDarkColor, iconUrl, startUrl,
-        description, iarc, displayMode, orientation, screenshots
+        description, iarc, displayMode, orientation, screenshots, enableBilling
     } = req.body;
 
     const shouldUseExistingKey = signingMode === 'existing' || !!req.file;
@@ -281,6 +308,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
     const vCode = parseInt(versionCode) || 1;
     const vName = versionName || `1.0.${vCode}`;
+    const shouldEnableBilling = enableBilling === 'on' || enableBilling === 'true' || enableBilling === true;
     const buildDir = path.join(__dirname, 'temp_build');
 
     try {
@@ -431,6 +459,16 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
         io.emit('log', `> [2/3] Atualizando Manifesto e Assets...`);
         await runCommand('npx', ['@bubblewrap/cli', 'update', '--skipCheck', '--no-prompt']);
+
+        if (shouldEnableBilling) {
+            io.emit('log', '> Adicionando permissão com.android.vending.BILLING ao AndroidManifest.xml...');
+            const billingPatch = addBillingPermissionToManifest(buildDir);
+            io.emit('log', billingPatch.changed
+                ? '> ✅ Permissão de billing adicionada ao AAB/APK.'
+                : '> ✅ Permissão de billing já estava presente no projeto.');
+        } else {
+            io.emit('log', '> Permissão de billing desativada para este build.');
+        }
 
         io.emit('log', `> [3/3] Compilando APK/AAB (Econômico)...`);
         const buildCode = await runCommand('npx', [
