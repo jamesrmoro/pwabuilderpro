@@ -436,10 +436,10 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 const ls = spawn(cmd, args, { cwd: buildDir, env, shell: false });
                 currentBuildProcesses.push(ls);
 
-                ls.stdout.on('data', (data) => {
+                const handleProcessOutput = (data, isError = false) => {
                     const clean = cleanLogs(data);
-                    fs.appendFileSync(path.join(buildDir, 'build.log'), clean + '\n');
-                    
+                    fs.appendFileSync(path.join(buildDir, 'build.log'), `${isError ? '⚠️ ' : ''}${clean}\n`);
+
                     // ROBÔ: Respondendo ao Checksum / Regeneração
                     if (clean.includes('regenerate your project') || clean.includes('(Y/n)')) {
                         io.emit('log', "🤖 Detectado pedido de regeneração. Respondendo 'Y'...");
@@ -460,14 +460,11 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                         ls.stdin.write(`${passwordToSend}\n`);
                     }
 
-                    io.emit('log', clean);
-                });
+                    io.emit('log', isError ? `⚠️ ${clean}` : clean);
+                };
 
-                ls.stderr.on('data', (data) => {
-                    const clean = cleanLogs(data);
-                    fs.appendFileSync(path.join(buildDir, 'build.log'), `⚠️ ${clean}\n`);
-                    io.emit('log', `⚠️ ${clean}`);
-                });
+                ls.stdout.on('data', (data) => handleProcessOutput(data));
+                ls.stderr.on('data', (data) => handleProcessOutput(data, true));
                 ls.on('close', (code) => {
                     const index = currentBuildProcesses.indexOf(ls);
                     if (index > -1) {

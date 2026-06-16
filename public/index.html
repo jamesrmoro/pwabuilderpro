@@ -503,6 +503,7 @@
     let loaderTimerInterval = null;
     let loaderMessageInterval = null;
     let buildTimeout = null;
+    const buildTimeoutMinutes = 30;
     const loaderMessages = [
         "Construindo seu App...",
         "Aguarde mais um pouco...",
@@ -884,41 +885,16 @@
         clearTimeout(buildTimeout);
 
         buildTimeout = setTimeout(() => {
-            clearInterval(loaderTimerInterval);
             clearInterval(loaderMessageInterval);
-            fullLoader.classList.remove('show');
+            document.getElementById('loaderMessage').innerText = 'Build ainda em andamento... você pode aguardar ou cancelar.';
 
-            btnGerar.disabled = false;
-            btnCancel.style.display = 'none';
-            buildSpinner.style.display = 'none';
-            btnGerar.querySelector('span').innerText = 'GERAR APLICATIVO';
+            statusInd.innerText = `⚠️ Build ainda em andamento após ${buildTimeoutMinutes} min`;
+            statusInd.style.background = '#f59e0b';
+            statusInd.style.color = '#121212';
 
-            statusInd.innerText = "❌ ERRO: Tempo Limite Excedido (12 min)";
-            statusInd.style.background = '#e74c3c';
-            statusInd.style.color = 'white';
-
-            const modalTitle = document.getElementById('modalTitle');
-            const checkIcon = document.getElementById('modalCheckIcon');
-            const circleIcon = document.getElementById('modalCircleIcon');
-            const iconLine1 = document.getElementById('iconLine1');
-            const iconLine2 = document.getElementById('iconLine2');
-
-            modalTitle.innerText = "Falha por Tempo Limite (Timeout)";
-            modalTitle.style.color = "#e74c3c";
-            checkIcon.className = "check-icon error-icon";
-            circleIcon.className = "icon-circle error-circle";
-            iconLine1.className = "icon-line error-line left";
-            iconLine2.className = "icon-line error-line right";
-
-            btnDownloadAab.style.display = 'none';
-            btnDownloadAab.onclick = () => successModal.classList.remove('show');
-            btnDownloadApk.style.display = 'none';
-            btnDownloadKey.style.display = 'none';
-            document.getElementById('buildTimeText').style.display = 'none';
-            document.getElementById('signedBadge').style.display = 'none';
-
-            successModal.classList.add('show');
-        }, 12 * 60 * 1000);
+            logDiv.innerText += `> ⚠️ O build passou de ${buildTimeoutMinutes} minutos, mas o processo continua em execução. Aguarde a conclusão ou use Cancelar se quiser interromper.\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }, buildTimeoutMinutes * 60 * 1000);
 
         loaderTimerInterval = setInterval(() => {
             const elapsedMs = Date.now() - buildStartTime;
