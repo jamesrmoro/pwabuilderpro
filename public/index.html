@@ -379,20 +379,33 @@
                 <input type="file" name="signingKey">
             </div>
             <div class="form-group">
-                <label>Key Alias:</label>
+                <label>Alias da chave:</label>
                 <input type="text" name="keyAlias" placeholder="ex: meualias" value="android" required>
             </div>
             <div class="form-group">
-                <label for="storePassword">Senha da Keystore:</label>
+                <label for="storePassword">Senha do Keystore:</label>
                 <div class="password-input-wrapper">
-                    <input type="password" id="storePassword" name="storePassword" placeholder="Mínimo 6 caracteres. Guarde para atualizações futuras." required minlength="6" autocomplete="current-password">
-                    <button type="button" id="toggleStorePassword" class="toggle-password-btn" aria-label="Mostrar senha da keystore" aria-pressed="false" title="Mostrar senha">
+                    <input type="password" id="storePassword" name="storePassword" placeholder="Senha para abrir o arquivo .jks/.keystore" required minlength="6" autocomplete="current-password">
+                    <button type="button" id="toggleStorePassword" class="toggle-password-btn" data-target="storePassword" aria-label="Mostrar senha do keystore" aria-pressed="false" title="Mostrar senha">
                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" stroke-width="1.8" stroke-linejoin="round"/>
                             <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke-width="1.8"/>
                         </svg>
                     </button>
                 </div>
+            </div>
+            <div class="form-group">
+                <label for="keyPassword">Senha da chave privada:</label>
+                <div class="password-input-wrapper">
+                    <input type="password" id="keyPassword" name="keyPassword" placeholder="Opcional: deixe vazio para usar a senha do keystore" minlength="6" autocomplete="current-password">
+                    <button type="button" id="toggleKeyPassword" class="toggle-password-btn" data-target="keyPassword" aria-label="Mostrar senha da chave privada" aria-pressed="false" title="Mostrar senha">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" stroke-width="1.8" stroke-linejoin="round"/>
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke-width="1.8"/>
+                        </svg>
+                    </button>
+                </div>
+                <small style="display: block; margin-top: 8px; color: #cbd5e1; line-height: 1.4;">Se não informar, o sistema usa a senha do keystore também para a chave privada.</small>
             </div>
         </fieldset>
 
@@ -421,8 +434,6 @@
     const fetchSpinner = document.getElementById('fetchSpinner');
     const buildSpinner = document.getElementById('buildSpinner');
     const toast = document.getElementById('toast');
-    const storePasswordInput = document.getElementById('storePassword');
-    const toggleStorePassword = document.getElementById('toggleStorePassword');
 
     // Modal Elements
     const successModal = document.getElementById('successModal');
@@ -470,13 +481,16 @@
         `;
     }
 
-    toggleStorePassword.onclick = () => {
-        const shouldShowPassword = storePasswordInput.type === 'password';
-        storePasswordInput.type = shouldShowPassword ? 'text' : 'password';
-        toggleStorePassword.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
-        toggleStorePassword.setAttribute('aria-label', shouldShowPassword ? 'Ocultar senha da keystore' : 'Mostrar senha da keystore');
-        toggleStorePassword.title = shouldShowPassword ? 'Ocultar senha' : 'Mostrar senha';
-    };
+    document.querySelectorAll('.toggle-password-btn[data-target]').forEach((button) => {
+        button.onclick = () => {
+            const passwordInput = document.getElementById(button.dataset.target);
+            const shouldShowPassword = passwordInput.type === 'password';
+            passwordInput.type = shouldShowPassword ? 'text' : 'password';
+            button.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+            button.setAttribute('aria-label', `${shouldShowPassword ? 'Ocultar' : 'Mostrar'} ${passwordInput.labels[0].innerText.replace(':', '').toLowerCase()}`);
+            button.title = shouldShowPassword ? 'Ocultar senha' : 'Mostrar senha';
+        };
+    });
 
     // Sidebar Elements
     const historySidebar = document.getElementById('historySidebar');

@@ -79,10 +79,29 @@ function addBillingPermissionToManifest(buildDir) {
     return { manifestPath, changed: true };
 }
 
-async function createSigningKey(buildDir, keyAlias, storePassword) {
+function getSigningFailureMessage(logContent = '') {
+    const lowerLog = logContent.toLowerCase();
+
+    if (lowerLog.includes('no key with alias') || (lowerLog.includes('alias') && lowerLog.includes('not found'))) {
+        return '❌ O Build falhou na assinatura: alias da chave incorreto ou não encontrado no keystore. Confira o campo "Alias da chave".';
+    }
+
+    if (lowerLog.includes('keystore was tampered') || lowerLog.includes('keystore password was incorrect') || lowerLog.includes('password was incorrect')) {
+        return '❌ O Build falhou na assinatura: senha do keystore incorreta. Confira a senha usada para abrir o arquivo .jks/.keystore.';
+    }
+
+    if (lowerLog.includes('cannot recover key') || lowerLog.includes('key password') || lowerLog.includes('failed to recover key')) {
+        return '❌ O Build falhou na assinatura: senha da chave privada incorreta. Se a chave não tiver senha separada, deixe esse campo vazio para usar a senha do keystore.';
+    }
+
+    return '❌ O Build falhou. Confira alias, senha do keystore e senha da chave privada. O download dos logs pode estar disponível.';
+}
+
+async function createSigningKey(buildDir, keyAlias, storePassword, keyPassword) {
     const keystorePath = path.join(buildDir, defaultGeneratedKeystoreName);
     const alias = sanitizeKeyAlias(keyAlias);
-    const password = (storePassword || '').trim();
+    const password = storePassword || '';
+    const privateKeyPassword = keyPassword || storePassword || '';
 
     if (!password || password.length < 6) {
         throw new Error('Para criar uma nova chave, informe uma senha da keystore com pelo menos 6 caracteres. Guarde essa senha para futuras atualizações do app.');
@@ -98,7 +117,7 @@ async function createSigningKey(buildDir, keyAlias, storePassword) {
         '-keysize', '2048',
         '-validity', '10000',
         '-storepass', password,
-        '-keypass', password,
+        '-keypass', privateKeyPassword,
         '-dname', `CN=${alias}, OU=PWA Builder Pro, O=PWA Builder Pro, L=Internet, S=Internet, C=BR`
     ];
 
@@ -284,15 +303,17 @@ app.get('/download-key', (req, res) => {
 
 app.post('/generate', upload.single('signingKey'), async (req, res) => {
     const {
-        appName, host, keyAlias, storePassword, signingMode, versionCode, versionName,
+        appName, host, keyAlias, storePassword, keyPassword, signingMode, versionCode, versionName,
         shortName, packageId, themeColor, themeDarkColor, backgroundColor, navColor, navDarkColor, iconUrl, startUrl,
         description, iarc, displayMode, orientation, screenshots, enableBilling
     } = req.body;
 
     const shouldUseExistingKey = signingMode === 'existing' || !!req.file;
+    const resolvedKeyPassword = keyPassword || storePassword;
+    const hasInvalidKeyPassword = !!keyPassword && keyPassword.length < 6;
     const missingRequiredFields = !host || !appName || !storePassword || (shouldUseExistingKey && (!req.file || !keyAlias));
 
-    if (missingRequiredFields) {
+    if (missingRequiredFields || hasInvalidKeyPassword) {
         if (req.file && req.file.path) {
             try {
                 fs.unlinkSync(req.file.path);
@@ -300,9 +321,11 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 console.error('Error deleting file:', e.message);
             }
         }
-        const msg = shouldUseExistingKey
-            ? 'Faltam campos obrigatórios (host, appName, signingKey, keyAlias, storePassword)'
-            : 'Faltam campos obrigatórios (host, appName, storePassword)';
+        const msg = hasInvalidKeyPassword
+            ? 'A senha da chave privada deve ter pelo menos 6 caracteres, ou ficar vazia para usar a senha do keystore.'
+            : shouldUseExistingKey
+                ? 'Faltam campos obrigatórios (host, appName, signingKey, keyAlias, storePassword). A senha da chave privada é opcional e, se ficar vazia, usará a senha do keystore.'
+                : 'Faltam campos obrigatórios (host, appName, storePassword). A senha da chave privada é opcional e, se ficar vazia, usará a senha do keystore.';
         return res.status(400).json({ success: false, msg });
     }
 
@@ -334,7 +357,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             keystorePath = path.resolve(req.file.path).replace(/\\/g, '/');
         } else {
             io.emit('log', '> Nenhuma chave enviada. Criando nova keystore para primeira publicação...');
-            const generatedKey = await createSigningKey(buildDir, keyAlias, storePassword);
+            const generatedKey = await createSigningKey(buildDir, keyAlias, storePassword, resolvedKeyPassword);
             keystorePath = generatedKey.keystorePath.replace(/\\/g, '/');
             finalKeyAlias = generatedKey.alias;
             io.emit('log', `> ✅ Nova keystore criada automaticamente (${defaultGeneratedKeystoreName}) com alias "${finalKeyAlias}".`);
@@ -405,12 +428,12 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 const env = { 
                     ...process.env, 
                     BUBBLEWRAP_KEYSTORE_PASSWORD: storePassword,
-                    BUBBLEWRAP_KEY_PASSWORD: storePassword,
+                    BUBBLEWRAP_KEY_PASSWORD: resolvedKeyPassword,
                     _JAVA_OPTIONS: "-Xmx512M",
                     GRADLE_OPTS: "-Xmx512m -Dorg.gradle.daemon=false"
                 };
 
-                const ls = spawn(cmd, args, { cwd: buildDir, env, shell: true });
+                const ls = spawn(cmd, args, { cwd: buildDir, env, shell: false });
                 currentBuildProcesses.push(ls);
 
                 ls.stdout.on('data', (data) => {
@@ -430,7 +453,11 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
                     // ROBÔ: Respondendo Senha (Fallback se o env: falhar)
                     if (clean.includes('Password') && !clean.includes('*')) {
-                        ls.stdin.write(`${storePassword}\n`);
+                        const lowerClean = clean.toLowerCase();
+                        const passwordToSend = lowerClean.includes('key') || lowerClean.includes('alias')
+                            ? resolvedKeyPassword
+                            : storePassword;
+                        ls.stdin.write(`${passwordToSend}\n`);
                     }
 
                     io.emit('log', clean);
@@ -476,7 +503,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             '--skipCheck',
             '--no-prompt',
             '--signingKeyPassword', storePassword,
-            '--signingKeyAliasPassword', storePassword
+            '--signingKeyAliasPassword', resolvedKeyPassword
         ]);
 
         if (buildCode === 0) {
@@ -503,7 +530,8 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                io.emit('status', { success: false, msg: "❌ O Build falhou na assinatura do pacote. O download do arquivo de logs (build-error.log) está disponível.", isSigned: false, hasLogs: true });
             }
         } else {
-            io.emit('status', { success: false, msg: "❌ O Build falhou. Verifique se o Java ainda tem RAM. O download dos logs pode estar disponível.", isSigned: false, hasLogs: true });
+            const buildLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
+            io.emit('status', { success: false, msg: getSigningFailureMessage(buildLog), isSigned: false, hasLogs: true });
         }
 
     } catch (err) {
