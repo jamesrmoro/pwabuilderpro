@@ -298,7 +298,8 @@ app.get('/download', (req, res) => {
             console.log(`> Enviando log de erros: ${logFile}`);
             res.download(logFile, 'build-error.log');
         } else {
-            res.status(404).send('Build finalizado, mas o arquivo assinado não foi encontrado na pasta temp_build. Assinatura falhou e não há logs disponíveis.');
+            console.warn('> Download solicitado, mas nenhum artefato ou build.log foi encontrado em temp_build.');
+            res.status(404).send('Nenhum AAB/APK ou build-error.log disponível em temp_build. Gere o aplicativo novamente e acompanhe o console; itens antigos do histórico dependem dos arquivos ainda existirem no servidor.');
         }
     }
 });
