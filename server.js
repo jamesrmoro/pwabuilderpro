@@ -30,6 +30,11 @@ function sanitizeKeyAlias(alias) {
     return (alias || 'android').trim().replace(/[^a-zA-Z0-9_.-]/g, '-') || 'android';
 }
 
+
+function getNpxCommand() {
+    return process.platform === 'win32' ? 'npx.cmd' : 'npx';
+}
+
 function runProcess(cmd, args, options = {}) {
     return new Promise((resolve) => {
         const child = spawn(cmd, args, { ...options, shell: false });
@@ -512,8 +517,11 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 ls.stdout.on('data', (data) => handleProcessOutput(data));
                 ls.stderr.on('data', (data) => handleProcessOutput(data, true));
                 ls.on('error', (error) => {
-                    io.emit('log', `> ❌ Falha ao iniciar comando: ${error.message}`);
-                    fs.appendFileSync(path.join(buildDir, 'build.log'), `❌ Falha ao iniciar comando: ${error.message}\n`);
+                    const commandHelp = error.code === 'ENOENT'
+                        ? `Comando não encontrado: ${cmd}. Verifique se Node.js/npm estão instalados e se o PATH do serviço inclui o npm/npx.`
+                        : error.message;
+                    io.emit('log', `> ❌ Falha ao iniciar comando: ${commandHelp}`);
+                    fs.appendFileSync(path.join(buildDir, 'build.log'), `❌ Falha ao iniciar comando: ${commandHelp}\n`);
                     finish(1);
                 });
                 ls.on('close', (code) => {
@@ -526,6 +534,8 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             });
         };
 
+        const npxCommand = getNpxCommand();
+
         const ensureCommandSucceeded = (code, stepName) => {
             if (code === 124) {
                 throw new Error(`${stepName} foi interrompido por timeout/inatividade. Verifique o build.log para saber em qual prompt ou etapa travou.`);
@@ -536,14 +546,14 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
         };
 
         io.emit('log', `> [1/3] Inicializando ambiente TWA...`);
-        const initCode = await runCommand('npx', ['--yes', '@bubblewrap/cli', 'init', '--manifest', 'twa-manifest.json', '--skipCheck', '--no-prompt']);
+        const initCode = await runCommand(npxCommand, ['--yes', '@bubblewrap/cli', 'init', '--manifest', 'twa-manifest.json', '--skipCheck', '--no-prompt']);
         ensureCommandSucceeded(initCode, 'Inicialização do Bubblewrap');
         
         // Injeta limite local na pasta temp_build
         fs.writeFileSync(path.join(buildDir, 'gradle.properties'), "org.gradle.jvmargs=-Xmx512m\norg.gradle.daemon=false");
 
         io.emit('log', `> [2/3] Atualizando Manifesto e Assets...`);
-        const updateCode = await runCommand('npx', ['--yes', '@bubblewrap/cli', 'update', '--skipCheck', '--no-prompt']);
+        const updateCode = await runCommand(npxCommand, ['--yes', '@bubblewrap/cli', 'update', '--skipCheck', '--no-prompt']);
         ensureCommandSucceeded(updateCode, 'Atualização do Bubblewrap');
 
         if (shouldEnableBilling) {
@@ -557,7 +567,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
         }
 
         io.emit('log', `> [3/3] Compilando APK/AAB (Econômico)...`);
-        const buildCode = await runCommand('npx', [
+        const buildCode = await runCommand(npxCommand, [
             '--yes', '@bubblewrap/cli', 'build',
             '--skipCheck',
             '--no-prompt',
