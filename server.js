@@ -451,12 +451,12 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                         ls.stdin.write(`${vName}\n`);
                     }
 
-                    // ROBÔ: Respondendo Senha (Fallback se o env: falhar)
-                    if (clean.includes('Password') && !clean.includes('*')) {
-                        const lowerClean = clean.toLowerCase();
-                        const passwordToSend = lowerClean.includes('key') || lowerClean.includes('alias')
-                            ? resolvedKeyPassword
-                            : storePassword;
+                    // ROBÔ: Respondendo Senha (fallback se o env falhar). Não imprimir senhas.
+                    const lowerClean = clean.toLowerCase();
+                    if (lowerClean.includes('password') && !clean.includes('*')) {
+                        const asksForKeystorePassword = lowerClean.includes('key store') || lowerClean.includes('keystore');
+                        const asksForPrivateKeyPassword = !asksForKeystorePassword && (lowerClean.includes('key') || lowerClean.includes('alias'));
+                        const passwordToSend = asksForPrivateKeyPassword ? resolvedKeyPassword : storePassword;
                         ls.stdin.write(`${passwordToSend}\n`);
                     }
 
@@ -499,11 +499,11 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
         io.emit('log', `> [3/3] Compilando APK/AAB (Econômico)...`);
         const buildCode = await runCommand('npx', [
-            '@bubblewrap/cli', 'build', 
+            '@bubblewrap/cli', 'build',
             '--skipCheck',
             '--no-prompt',
-            '--signingKeyPassword', storePassword,
-            '--signingKeyAliasPassword', resolvedKeyPassword
+            '--signingKeyPath', keystorePath,
+            '--signingKeyAlias', finalKeyAlias
         ]);
 
         if (buildCode === 0) {
