@@ -23,6 +23,12 @@
         input:focus { outline: none; border-color: var(--mint); }
         input[type="color"] { padding: 0; border: none; cursor: pointer; }
         input[type="file"] { padding: 12px; }
+        .password-input-wrapper { position: relative; display: flex; align-items: center; }
+        .password-input-wrapper input { padding-right: 54px; }
+        .toggle-password-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 40px; min-height: 40px; margin: 0; padding: 0; border-radius: 8px; background: transparent; color: #cbd5e1; border: 1px solid transparent; }
+        .toggle-password-btn:hover { background: rgba(45, 212, 191, 0.12); color: var(--mint); border-color: rgba(45, 212, 191, 0.24); }
+        .toggle-password-btn:focus-visible { outline: 3px solid rgba(45, 212, 191, 0.35); outline-offset: 2px; }
+        .toggle-password-btn svg { width: 22px; height: 22px; stroke: currentColor; }
         .row { display: flex; gap: 12px; }
         .row div { flex: 1; }
         fieldset { border: 1px solid var(--blue-mid); border-radius: 8px; padding: 15px; margin-bottom: 20px; background: #243040; }
@@ -377,8 +383,16 @@
                 <input type="text" name="keyAlias" placeholder="ex: meualias" value="android" required>
             </div>
             <div class="form-group">
-                <label>Senha da Keystore:</label>
-                <input type="password" name="storePassword" placeholder="Mínimo 6 caracteres. Guarde para atualizações futuras." required minlength="6">
+                <label for="storePassword">Senha da Keystore:</label>
+                <div class="password-input-wrapper">
+                    <input type="password" id="storePassword" name="storePassword" placeholder="Mínimo 6 caracteres. Guarde para atualizações futuras." required minlength="6" autocomplete="current-password">
+                    <button type="button" id="toggleStorePassword" class="toggle-password-btn" aria-label="Mostrar senha da keystore" aria-pressed="false" title="Mostrar senha">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" stroke-width="1.8" stroke-linejoin="round"/>
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke-width="1.8"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </fieldset>
 
@@ -407,6 +421,8 @@
     const fetchSpinner = document.getElementById('fetchSpinner');
     const buildSpinner = document.getElementById('buildSpinner');
     const toast = document.getElementById('toast');
+    const storePasswordInput = document.getElementById('storePassword');
+    const toggleStorePassword = document.getElementById('toggleStorePassword');
 
     // Modal Elements
     const successModal = document.getElementById('successModal');
@@ -453,6 +469,14 @@
             <span class="download-card-arrow">→</span>
         `;
     }
+
+    toggleStorePassword.onclick = () => {
+        const shouldShowPassword = storePasswordInput.type === 'password';
+        storePasswordInput.type = shouldShowPassword ? 'text' : 'password';
+        toggleStorePassword.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+        toggleStorePassword.setAttribute('aria-label', shouldShowPassword ? 'Ocultar senha da keystore' : 'Mostrar senha da keystore');
+        toggleStorePassword.title = shouldShowPassword ? 'Ocultar senha' : 'Mostrar senha';
+    };
 
     // Sidebar Elements
     const historySidebar = document.getElementById('historySidebar');
