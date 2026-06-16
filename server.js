@@ -15,6 +15,8 @@ let currentBuildProcesses = [];
 const io = new Server(server);
 const upload = multer({ dest: './uploads/', limits: { fileSize: 10 * 1024 * 1024 } });
 const defaultGeneratedKeystoreName = 'generated-signing-key.jks';
+const commandInactivityTimeoutMs = 20 * 60 * 1000;
+const commandHardTimeoutMs = 90 * 60 * 1000;
 
 app.use(express.static('public'));
 app.use(express.json());
@@ -425,6 +427,16 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
         const runCommand = (cmd, args) => {
             return new Promise((resolve) => {
+                let settled = false;
+                let inactivityTimer;
+                let hardTimer;
+                const finish = (code) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(inactivityTimer);
+                    clearTimeout(hardTimer);
+                    resolve(code);
+                };
                 const env = { 
                     ...process.env, 
                     BUBBLEWRAP_KEYSTORE_PASSWORD: storePassword,
@@ -436,13 +448,47 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
                 const ls = spawn(cmd, args, { cwd: buildDir, env, shell: false });
                 currentBuildProcesses.push(ls);
 
+                const killTimedOutProcess = (reason, exitCode) => {
+                    io.emit('log', `> ❌ ${reason}`);
+                    fs.appendFileSync(path.join(buildDir, 'build.log'), `❌ ${reason}\n`);
+                    try {
+                        ls.kill('SIGTERM');
+                        setTimeout(() => {
+                            try { ls.kill('SIGKILL'); } catch (_) {}
+                        }, 5000);
+                    } catch (err) {
+                        console.error('Erro ao encerrar processo travado:', err.message);
+                    }
+                    finish(exitCode);
+                };
+
+                const resetInactivityTimer = () => {
+                    clearTimeout(inactivityTimer);
+                    inactivityTimer = setTimeout(() => {
+                        killTimedOutProcess('Comando sem saída por 20 minutos. Possível prompt não respondido ou Gradle travado.', 124);
+                    }, commandInactivityTimeoutMs);
+                };
+
+                hardTimer = setTimeout(() => {
+                    killTimedOutProcess('Comando excedeu o limite máximo de 90 minutos e foi interrompido.', 124);
+                }, commandHardTimeoutMs);
+                resetInactivityTimer();
+
                 const handleProcessOutput = (data, isError = false) => {
+                    resetInactivityTimer();
                     const clean = cleanLogs(data);
                     fs.appendFileSync(path.join(buildDir, 'build.log'), `${isError ? '⚠️ ' : ''}${clean}\n`);
 
                     // ROBÔ: Respondendo ao Checksum / Regeneração
-                    if (clean.includes('regenerate your project') || clean.includes('(Y/n)')) {
-                        io.emit('log', "🤖 Detectado pedido de regeneração. Respondendo 'Y'...");
+                    const lowerCleanForPrompt = clean.toLowerCase();
+                    const asksYesNo = lowerCleanForPrompt.includes('regenerate your project')
+                        || lowerCleanForPrompt.includes('ok to proceed')
+                        || lowerCleanForPrompt.includes('do you want to continue')
+                        || lowerCleanForPrompt.includes('(y/n)')
+                        || lowerCleanForPrompt.includes('(y)')
+                        || clean.includes('(Y/n)');
+                    if (asksYesNo) {
+                        io.emit('log', "🤖 Detectado pedido de confirmação. Respondendo 'Y'...");
                         ls.stdin.write("Y\n");
                     }
 
@@ -465,24 +511,40 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
                 ls.stdout.on('data', (data) => handleProcessOutput(data));
                 ls.stderr.on('data', (data) => handleProcessOutput(data, true));
+                ls.on('error', (error) => {
+                    io.emit('log', `> ❌ Falha ao iniciar comando: ${error.message}`);
+                    fs.appendFileSync(path.join(buildDir, 'build.log'), `❌ Falha ao iniciar comando: ${error.message}\n`);
+                    finish(1);
+                });
                 ls.on('close', (code) => {
                     const index = currentBuildProcesses.indexOf(ls);
                     if (index > -1) {
                         currentBuildProcesses.splice(index, 1);
                     }
-                    resolve(code);
+                    finish(code);
                 });
             });
         };
 
+        const ensureCommandSucceeded = (code, stepName) => {
+            if (code === 124) {
+                throw new Error(`${stepName} foi interrompido por timeout/inatividade. Verifique o build.log para saber em qual prompt ou etapa travou.`);
+            }
+            if (code !== 0) {
+                throw new Error(`${stepName} falhou com código ${code}. Verifique o build.log para detalhes.`);
+            }
+        };
+
         io.emit('log', `> [1/3] Inicializando ambiente TWA...`);
-        await runCommand('npx', ['@bubblewrap/cli', 'init', '--manifest', 'twa-manifest.json', '--skipCheck', '--no-prompt']);
+        const initCode = await runCommand('npx', ['--yes', '@bubblewrap/cli', 'init', '--manifest', 'twa-manifest.json', '--skipCheck', '--no-prompt']);
+        ensureCommandSucceeded(initCode, 'Inicialização do Bubblewrap');
         
         // Injeta limite local na pasta temp_build
         fs.writeFileSync(path.join(buildDir, 'gradle.properties'), "org.gradle.jvmargs=-Xmx512m\norg.gradle.daemon=false");
 
         io.emit('log', `> [2/3] Atualizando Manifesto e Assets...`);
-        await runCommand('npx', ['@bubblewrap/cli', 'update', '--skipCheck', '--no-prompt']);
+        const updateCode = await runCommand('npx', ['--yes', '@bubblewrap/cli', 'update', '--skipCheck', '--no-prompt']);
+        ensureCommandSucceeded(updateCode, 'Atualização do Bubblewrap');
 
         if (shouldEnableBilling) {
             io.emit('log', '> Adicionando permissão com.android.vending.BILLING ao AndroidManifest.xml...');
@@ -496,7 +558,7 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
 
         io.emit('log', `> [3/3] Compilando APK/AAB (Econômico)...`);
         const buildCode = await runCommand('npx', [
-            '@bubblewrap/cli', 'build',
+            '--yes', '@bubblewrap/cli', 'build',
             '--skipCheck',
             '--no-prompt',
             '--signingKeyPath', keystorePath,
@@ -528,7 +590,10 @@ app.post('/generate', upload.single('signingKey'), async (req, res) => {
             }
         } else {
             const buildLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
-            io.emit('status', { success: false, msg: getSigningFailureMessage(buildLog), isSigned: false, hasLogs: true });
+            const msg = buildCode === 124
+                ? '❌ O Build foi interrompido por timeout/inatividade. Verifique o build.log para identificar se ficou parado em prompt, download ou Gradle.'
+                : getSigningFailureMessage(buildLog);
+            io.emit('status', { success: false, msg, isSigned: false, hasLogs: true });
         }
 
     } catch (err) {
